@@ -5,19 +5,21 @@ define(['updeep'], function(u) {
         if (!state) return { workspaces: {}, types: [] };
 
         switch (type) {
-            case 'PRODUCT_LIST': return updateList(state, payload)
+            case 'PRODUCT_LIST': return updateList(state, payload);
             case 'PRODUCT_UPDATE_TYPES': return updateTypes(state, payload);
             case 'PRODUCT_UPDATE_TITLE': return updateTitle(state, payload);
             case 'PRODUCT_SELECT': return selectProduct(state, payload);
             case 'PRODUCT_UPDATE': return updateProduct(state, payload);
             case 'PRODUCT_PREVIEW_UPDATE': return updatePreview(state, payload);
             case 'PRODUCT_REMOVE': return removeProduct(state, payload);
-            case 'PRODUCT_UPDATE_VIEWPORT': return updateViewport(state, payload)
+            case 'PRODUCT_UPDATE_VIEWPORT': return updateViewport(state, payload);
             case 'PRODUCT_REMOVE_ELEMENTS': return removeElements(state, payload);
+            case 'PRODUCT_UPDATE_DATA': return updateData(state, payload);
+            case 'PRODUCT_UPDATE_EXTENDED_DATA': return updateExtendedData(state, payload);
         }
 
         return state;
-    }
+    };
 
     function removeElements(state, { workspaceId, productId, elements }) {
         const { vertexIds, edgeIds } = elements;
@@ -125,7 +127,7 @@ define(['updeep'], function(u) {
 
     function hydrateExtendedData(item) {
         if (item.extendedData && _.isString(item.extendedData)) {
-            return { ...item, extendedData: JSON.parse(item.extendedData) };
+            return { ...item, extendedData: item.extendedData };
         }
         return item;
     }
@@ -140,4 +142,35 @@ define(['updeep'], function(u) {
         }, state);
     }
 
+    function updateData(state, {workspaceId, productId, key, value}) {
+        const updates = {};
+        updates[key] = value;
+        return u({
+            workspaces: {
+                [workspaceId]: {
+                    products: {
+                        [productId]: {
+                            data: updates
+                        }
+                    }
+                }
+            }
+        }, state);
+    }
+
+    function updateExtendedData(state, {workspaceId, productId, key, value}) {
+        const updates = {};
+        updates[key] = value;
+        return u({
+            workspaces: {
+                [workspaceId]: {
+                    products: {
+                        [productId]: {
+                            extendedData: updates
+                        }
+                    }
+                }
+            }
+        }, state);
+    }
 });

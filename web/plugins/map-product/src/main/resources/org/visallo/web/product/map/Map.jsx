@@ -31,6 +31,7 @@ define([
                     tools={this.getTools()}
                     generatePreview={generatePreview}
                     panelPadding={this.props.panelPadding}
+                    product={this.props.product}
                     onPan={this.onViewport}
                     onZoom={this.onViewport}
                     onContextTap={this.onContextTap}

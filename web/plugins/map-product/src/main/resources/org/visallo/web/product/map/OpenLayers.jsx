@@ -564,11 +564,12 @@ define([
 
         injectExtraPropsToTools() {
             const { map, cluster } = this.state;
+            const { product } = this.props;
             if (map && cluster) {
                 return this.props.tools.map(tool => {
                     return {
                         ...tool,
-                        props: { ol, map, cluster }
+                        props: { ol, map, cluster, product }
                     }
                 });
             }
