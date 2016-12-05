@@ -43,37 +43,62 @@ define([
         },
 
         setPositions: ({ productId, updateVertices, snapToGrid }) => (dispatch, getState) => {
-            if (workspaceReadonly(getState())) {
+            const state = getState();
+            if (workspaceReadonly(state)) {
                 return;
             }
 
-            const workspaceId = getState().workspace.currentId;
+            const workspaceId = state.workspace.currentId;
+            const product = state.product.workspaces[workspaceId].products[productId];
+            const byId = _.indexBy(product.extendedData.vertices, 'id');
+            const addingNewVertices = _.any(Object.keys(updateVertices), id => {
+                return !(id in byId)
+            });
+
+            updateVertices = _.mapObject(updateVertices, pos => {
+                return _.mapObject(pos, v => Math.round(v));
+            });
             dispatch({
                 type: 'PRODUCT_GRAPH_SET_POSITIONS',
                 payload: {
                     productId,
                     updateVertices,
+                    snapToGrid,
                     workspaceId
                 }
             })
             if (snapToGrid) {
-                dispatch({
-                    type: 'PRODUCT_GRAPH_SET_POSITIONS',
-                    payload: {
-                        productId,
-                        updateVertices,
-                        snapToGrid,
-                        workspaceId
-                    }
-                })
-                const product = getState().product.workspaces[workspaceId].products[productId];
-                const byId = _.indexBy(product.extendedData.vertices, 'id');
                 updateVertices = _.mapObject(updateVertices, (pos, id) => {
                     return byId[id].pos;
                 });
             }
 
-            ajax('POST', '/product', { productId, params: { updateVertices } });
+            ajax('POST', '/product', {
+                productId,
+                params: {
+                    updateVertices,
+                    broadcastOptions: {
+                        preventBroadcastToSourceGuid: true
+                    } 
+                },
+            }).then(() => {
+                if (addingNewVertices) {
+                    return ajax('GET', '/product', { productId,
+                        includeExtended: true,
+                        params: {
+                            includeVertices: true,
+                            includeEdges: true
+                        }
+                    }).then(product => {
+                        dispatch(productActions.update(product));
+
+                        const { edges } = JSON.parse(product.extendedData)
+                        const vertexIds = Object.keys(updateVertices);
+                        const edgeIds = _.pluck(edges, 'edgeId');
+                        dispatch(elementActions.get({ workspaceId, vertexIds, edgeIds }));
+                    });
+                }
+            });
         },
 
         updatePositions: ({ productId, updateVertices }) => (dispatch, getState) => {

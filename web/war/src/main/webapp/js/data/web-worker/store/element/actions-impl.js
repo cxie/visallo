@@ -42,9 +42,41 @@ define(['../actions', '../../util/ajax'], function(actions, ajax) {
                                     ...{[resultType]:elements}
                                 };
                                 dispatch(api.update(updates));
+                                if (type === 'edge' && elements.length) {
+                                    dispatch(api.updateEdgeLabels({ workspaceId, edges: elements }));
+                                }
                             })
                     }
                 });
+            }
+        },
+
+        updateEdgeLabels: ({ workspaceId, edges }) => (dispatch, getState) => {
+            const state = getState();
+            const elementState = state.element[workspaceId];
+            if (!elementState) return;
+            const { vertices } = elementState;
+            const updates = {};
+            const addToUpdates = (vertexId, label) => {
+                if (vertexId in vertices) {
+                    const vertex = vertices[vertexId];
+                    const labels = vertex.edgeLabels || [];
+                    if (!labels.includes(label)) {
+                        updates[vertexId] = [...labels, label];
+                    }
+                }
+            };
+
+            edges.forEach(edge => {
+                addToUpdates(edge.inVertexId, edge.label)
+                addToUpdates(edge.outVertexId, edge.label)
+            })
+
+            if (!_.isEmpty(updates)) {
+                dispatch({
+                    type: 'ELEMENT_UPDATE_EDGELABELS',
+                    payload: { workspaceId, vertexLabels: updates }
+                })
             }
         },
 
@@ -93,11 +125,12 @@ define(['../actions', '../../util/ajax'], function(actions, ajax) {
             if (!state.element[workspaceId]) {
                 return;
             }
-            const { vertices, edges } = state.element[workspaceId];
-            const update = (key, list, api, storeKey, otherStoreKey) => {
-                const inStore = list.filter(id => vertices[id]);
+            const elementStore = state.element[workspaceId];
+            const { vertices, edges } = elementStore;
+            const update = (key, list, type, storeKey, otherStoreKey) => {
+                const inStore = list.filter(id => elementStore[storeKey][id]);
                 if (inStore.length) {
-                    ajax('POST', `/${api}/exists`, { [key]: inStore })
+                    ajax('POST', `/${type}/exists`, { [key]: inStore })
                         .then(({ exists }) => {
                             const elements = [];
                             _.map(exists, (exists, id) => {

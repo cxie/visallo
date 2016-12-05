@@ -209,9 +209,11 @@ define([
             })
         },
 
-        onFocusPathsAdd(event, data) {
-            if (data) {
-                const { vertexIds } = data;
+        onFocusPathsAdd(event) {
+            const { paths } = this.state;
+            if (paths) {
+                const limitedPaths = paths.paths.slice(0, MaxPathsToFocus);
+                const vertexIds = _.chain(limitedPaths).flatten().uniq().value();
                 this.props.onDropElementIds({ vertexIds });
             }
         },
@@ -233,8 +235,7 @@ define([
         getTools() {
             return this.props.registry['org.visallo.graph.options'].map(e => ({
                 identifier: e.identifier,
-                optionComponentPath: e.optionComponentPath,
-                getProps: () => ({ cy: this.refs.cytoscape.state.cy })
+                componentPath: e.optionComponentPath
             }));
         },
 

@@ -5,16 +5,13 @@ import com.v5analytics.webster.ParameterizedHandler;
 import com.v5analytics.webster.annotations.Handle;
 import com.v5analytics.webster.annotations.Optional;
 import org.json.JSONObject;
-import org.vertexium.Authorizations;
 import org.visallo.core.model.workspace.WorkspaceRepository;
 import org.visallo.core.model.workspace.product.Product;
 import org.visallo.core.user.User;
 import org.visallo.core.util.ClientApiConverter;
 import org.visallo.web.clientapi.model.ClientApiProduct;
 import org.visallo.web.parameterProviders.ActiveWorkspaceId;
-
-import javax.servlet.http.HttpServletRequest;
-import java.util.ResourceBundle;
+import org.visallo.web.parameterProviders.SourceGuid;
 
 public class ProductUpdate implements ParameterizedHandler {
     private final WorkspaceRepository workspaceRepository;
@@ -32,17 +29,15 @@ public class ProductUpdate implements ParameterizedHandler {
             @Optional(name = "params") String paramsStr,
             @Optional(name = "preview") String previewDataUrl,
             @ActiveWorkspaceId String workspaceId,
-            Authorizations authorizations,
-            ResourceBundle resourceBundle,
-            HttpServletRequest request,
+            @SourceGuid String sourceGuid,
             User user
     ) throws Exception {
-        JSONObject params = null;
-        if (paramsStr != null) {
-            params = new JSONObject(paramsStr);
-        }
-        Product product = null;
+        JSONObject params = paramsStr == null ? new JSONObject() : new JSONObject(paramsStr);
+        Product product;
         if (previewDataUrl == null) {
+            if (params.has("broadcastOptions")) {
+                params.getJSONObject("broadcastOptions").put("sourceGuid", sourceGuid);
+            }
             product = workspaceRepository.addOrUpdateProduct(workspaceId, productId, title, kind, params, user);
         } else {
             product = workspaceRepository.updateProductPreview(workspaceId, productId, previewDataUrl, user);

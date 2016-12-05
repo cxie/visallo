@@ -271,6 +271,10 @@ define([
             this.edgeLabelFilter = edgeId || '';
             this.trigger(this.select('edgeLabelDropdownSelector'), 'selectRelationshipId', { relationshipId: edgeId });
 
+            if (this.matchType === 'vertex') {
+                return;
+            }
+
             if (this.edgeLabelFilter) {
                 return this.dataRequest('ontology', 'propertiesByRelationship', this.edgeLabelFilter)
                     .then(function(properties) {
@@ -333,6 +337,10 @@ define([
 
             this.conceptFilter = conceptId || '';
             this.trigger(this.select('conceptDropdownSelector'), 'selectConceptId', { conceptId: conceptId });
+
+            if (this.matchType === 'edge') {
+                return;
+            }
 
             if (this.conceptFilter) {
                 return this.dataRequest('ontology', 'propertiesByConceptId', this.conceptFilter)

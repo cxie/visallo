@@ -6,6 +6,7 @@ define([
     'colorjs',
     './betterGrid',
     './Menu',
+    './cytoscapeCorsFix',
     'util/formatters'
 ], function(
     React,
@@ -15,6 +16,7 @@ define([
     colorjs,
     betterGrid,
     Menu,
+    fixCytoscapeCorsHandling,
     F) {
     const { PropTypes } = React;
     const ANIMATION = { duration: 400, easing: 'spring(250, 20)' };
@@ -103,16 +105,12 @@ define([
             this.previousConfig = this.prepareConfig();
             const cy = cytoscape(this.previousConfig);
 
+            fixCytoscapeCorsHandling(cy);
             cytoscape('layout', 'bettergrid', betterGrid);
 
             this.clientRect = this.refs.cytoscape.getBoundingClientRect();
             this.setState({ cy })
 
-            cy.on('add remove position', ({ cy, cyTarget }) => {
-                if (cyTarget !== cy && cyTarget.is('node.v')) {
-                    this.updatePreview()
-                }
-            });
             cy.on('tap mouseover mouseout', 'node.decoration', event => {
                 this.props.onDecorationEvent(event);
             });
@@ -262,7 +260,7 @@ define([
                     {this.state.cy ? (
                         <NavigationControls
                             rightOffset={this.props.panelPadding.right}
-                            tools={this.props.tools}
+                            tools={this.injectToolProps()}
                             onFit={this.onControlsFit}
                             onZoom={this.onControlsZoom}
                             onPan={this.onControlsPan} />
@@ -276,7 +274,7 @@ define([
         updateDecorationPositions(cyNode, options = {}) {
             const { animate = false, toPosition } = options;
 
-            if (cyNode.isChild()) {
+            if (cyNode.isChild() && !cyNode.hasClass('decoration')) {
                 const decorations = cyNode.siblings().filter('.decoration');
                 if (decorations && decorations.length) {
                     const specs = specsForNode(cyNode, toPosition);
@@ -454,7 +452,7 @@ define([
             if (cyNodes.size() === 0) {
                 cy.reset();
             } else {
-                var bb = cyNodes.boundingBox({ includeLabels: true, includeNodes: true, includeEdges: false }),
+                var bb = cyNodes.boundingBox({ includeLabels: false, includeNodes: true, includeEdges: false }),
                     style = cy.style(),
                     { left, right, top, bottom } = this.props.panelPadding,
                     w = parseFloat(style.containerCss('width')),
@@ -573,6 +571,12 @@ define([
                                 } else {
                                     cyNode.removeData().data(item.data)
                                 }
+
+                                if (decorations) {
+                                    decorations.push(() => {
+                                        this.updateDecorationPositions(cyNode);
+                                    })
+                                }
                             })
                             break;
 
@@ -596,19 +600,26 @@ define([
 
                         case 'position':
                             if (!cyNode.grabbed() && !(cyNode.id() in this.moving)) {
-                                modifiedPosition = true;
                                 if (!item.data.alignment) {
-                                    if (this.props.animate) {
-                                        this.positionDisabled = true;
-                                        this.updateDecorationPositions(cyNode, { toPosition: item.position, animate: true });
-                                        cyNode.stop().animate({ position: item.position }, { ...ANIMATION, complete: () => {
-                                            this.positionDisabled = false;
-                                        }})
-                                    } else {
-                                        this.disableEvent('position', () => {
-                                            cyNode.position(item.position)
-                                            this.updateDecorationPositions(cyNode);
-                                        })
+                                    const positionChangedWithinTolerance = _.some(cyNode.position(), (oldV, key) => {
+                                        const newV = item.position[key];
+                                        return (Math.max(newV, oldV) - Math.min(newV, oldV)) >= 1
+                                    });
+
+                                    if (positionChangedWithinTolerance) {
+                                        modifiedPosition = true;
+                                        if (this.props.animate) {
+                                            this.positionDisabled = true;
+                                            this.updateDecorationPositions(cyNode, { toPosition: item.position, animate: true });
+                                            cyNode.stop().animate({ position: item.position }, { ...ANIMATION, complete: () => {
+                                                this.positionDisabled = false;
+                                            }})
+                                        } else {
+                                            this.disableEvent('position', () => {
+                                                cyNode.position(item.position)
+                                                this.updateDecorationPositions(cyNode);
+                                            })
+                                        }
                                     }
                                 }
                             } else if (this.layoutDone) {
@@ -737,6 +748,17 @@ define([
                     classes: 'drawEdgeToMouse'
                 })
             }
+        },
+
+        injectToolProps() {
+            const { cy } = this.state;
+            if (cy) {
+                return this.props.tools.map(tool => ({
+                    ...tool,
+                    props: { cy }
+                }))
+            }
+            return [];
         }
     })
 
@@ -793,7 +815,7 @@ define([
                 if (specs.textVAlign === alignment.v && alignment.h === 'center') {
                     y = specs.position.y - specs.h / 2 + specs.bboxLabels.h + decBBoxLabels.h / 2 + paddingY;
                 } else if (specs.textVAlign === alignment.v) {
-                    y = specs.position.y + specs.h / 2 + paddingY + (specs.bboxLabels.h - specs.h - paddingY) / 2;
+                    y = specs.position.y + specs.h / 2 + (specs.bboxLabels.h - specs.h) / 2;
                 } else {
                     y = specs.position.y + specs.h / 2 + decBBoxLabels.h / 2 + paddingY;
                 }
@@ -804,7 +826,7 @@ define([
                 if (specs.textVAlign === alignment.v && alignment.h === 'center') {
                     y = specs.position.y + specs.h / 2 - specs.bboxLabels.h - decBBoxLabels.h / 2 - paddingY;
                 } else if (specs.textVAlign === alignment.v) {
-                    y = specs.position.y - specs.h / 2 - paddingY - (specs.bboxLabels.h - specs.h - paddingY) / 2;
+                    y = specs.position.y - specs.h / 2 - (specs.bboxLabels.h - specs.h) / 2;
                 } else {
                     y = specs.position.y - specs.h / 2 - decBBoxLabels.h / 2 - paddingY
                 }
@@ -822,8 +844,8 @@ define([
             textVAlign: node.style('text-valign'),
             h: node.height(),
             w: node.width(),
-            bbox: node.boundingBox({includeLabels: false}),
-            bboxLabels: node.boundingBox({includeLabels: true})
+            bbox: node.boundingBox({includeNodes: true, includeLabels: false}),
+            bboxLabels: node.boundingBox({includeNodes: true, includeLabels: true})
         }
     }
 })

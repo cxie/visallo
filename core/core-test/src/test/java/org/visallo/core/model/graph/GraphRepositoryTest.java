@@ -1,6 +1,7 @@
 package org.visallo.core.model.graph;
 
 import com.google.common.collect.ImmutableSet;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
 import org.junit.Test;
@@ -305,22 +306,20 @@ public class GraphRepositoryTest {
 
         try (GraphUpdateContext ctx = graphRepository.beginGraphUpdate(Priority.NORMAL, user1, defaultAuthorizations)) {
             ElementMutation<Vertex> m = graph.prepareVertex("v1", new Visibility(""));
-            Vertex v1 = ctx.update(m, modifiedDate, visibilityJson, "http://visallo.org/text#concept1", updateContext -> {
+            ctx.update(m, modifiedDate, visibilityJson, "http://visallo.org/text#concept1", updateContext -> {
                 VisalloProperties.FILE_NAME.updateProperty(updateContext, "k1", "test1.txt", metadata);
             });
-            assertNotNull(v1);
 
             m = graph.prepareVertex("v2", new Visibility(""));
-            Vertex v2 = ctx.update(m, updateContext -> {
+            ctx.update(m, updateContext -> {
                 updateContext.updateBuiltInProperties(modifiedDate, visibilityJson);
                 updateContext.setConceptType("http://visallo.org/text#concept1");
                 VisalloProperties.FILE_NAME.updateProperty(updateContext, "k1", "test2.txt", metadata);
             });
-            assertNotNull(v2);
         }
 
-        List<JSONObject> queue = InMemoryWorkQueueRepository.getQueue("graphProperty");
-        assertEquals(8, queue.size());
+        List<byte[]> queue = InMemoryWorkQueueRepository.getQueue("graphProperty");
+        assertEquals(2, queue.size());
         assertWorkQueueContains(queue, "v1", "", VisalloProperties.MODIFIED_DATE.getPropertyName());
         assertWorkQueueContains(queue, "v1", "", VisalloProperties.VISIBILITY_JSON.getPropertyName());
         assertWorkQueueContains(queue, "v1", "", VisalloProperties.CONCEPT_TYPE.getPropertyName());
@@ -338,12 +337,17 @@ public class GraphRepositoryTest {
         assertEquals(visibilityJson, VisalloProperties.VISIBILITY_JSON.getPropertyValue(v1));
     }
 
-    private void assertWorkQueueContains(List<JSONObject> queue, String vertexId, String propertyKey, String propertyName) {
-        for (JSONObject item : queue) {
-            if (item.getString("graphVertexId").equals(vertexId)
-                    && item.getString("propertyKey").equals(propertyKey)
-                    && item.getString("propertyName").equals(propertyName)) {
-                return;
+    private void assertWorkQueueContains(List<byte[]> queue, String vertexId, String propertyKey, String propertyName) {
+        for (byte[] item : queue) {
+            JSONObject json = new JSONObject(new String(item));
+            JSONArray properties = json.getJSONArray("properties");
+            for (int i = 0; i < properties.length(); i++) {
+                JSONObject property = properties.getJSONObject(i);
+                if (json.getString("graphVertexId").equals(vertexId)
+                        && property.getString("propertyKey").equals(propertyKey)
+                        && property.getString("propertyName").equals(propertyName)) {
+                    return;
+                }
             }
         }
         fail("Could not find queue item " + vertexId + ", " + propertyKey + ", " + propertyName);

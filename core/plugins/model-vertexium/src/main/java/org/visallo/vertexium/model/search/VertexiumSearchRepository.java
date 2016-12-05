@@ -7,7 +7,6 @@ import org.json.JSONObject;
 import org.vertexium.*;
 import org.visallo.core.config.Configuration;
 import org.visallo.core.exception.VisalloAccessDeniedException;
-import org.visallo.core.exception.VisalloException;
 import org.visallo.core.model.graph.GraphRepository;
 import org.visallo.core.model.graph.GraphUpdateContext;
 import org.visallo.core.model.search.SearchProperties;
@@ -17,6 +16,7 @@ import org.visallo.core.model.user.GraphAuthorizationRepository;
 import org.visallo.core.model.user.PrivilegeRepository;
 import org.visallo.core.model.user.UserRepository;
 import org.visallo.core.model.workQueue.Priority;
+import org.visallo.core.model.workspace.WorkspaceRepository;
 import org.visallo.core.security.VisalloVisibility;
 import org.visallo.core.user.SystemUser;
 import org.visallo.core.user.User;
@@ -39,6 +39,7 @@ public class VertexiumSearchRepository extends SearchRepository {
     private final UserRepository userRepository;
     private final AuthorizationRepository authorizationRepository;
     private final PrivilegeRepository privilegeRepository;
+    private final WorkspaceRepository workspaceRepository;
 
     @Inject
     public VertexiumSearchRepository(
@@ -48,7 +49,8 @@ public class VertexiumSearchRepository extends SearchRepository {
             Configuration configuration,
             GraphAuthorizationRepository graphAuthorizationRepository,
             AuthorizationRepository authorizationRepository,
-            PrivilegeRepository privilegeRepository
+            PrivilegeRepository privilegeRepository,
+            WorkspaceRepository workspaceRepository
     ) {
         super(configuration);
         this.graph = graph;
@@ -56,6 +58,7 @@ public class VertexiumSearchRepository extends SearchRepository {
         this.userRepository = userRepository;
         this.authorizationRepository = authorizationRepository;
         this.privilegeRepository = privilegeRepository;
+        this.workspaceRepository = workspaceRepository;
         graphAuthorizationRepository.addAuthorizationToGraph(VISIBILITY_STRING);
     }
 
@@ -89,26 +92,24 @@ public class VertexiumSearchRepository extends SearchRepository {
         }
 
         try (GraphUpdateContext ctx = graphRepository.beginGraphUpdate(Priority.LOW, user, authorizations)) {
-            Vertex searchVertex = saveSearchVertex(ctx, id, name, url, searchParameters, authorizations);
+            saveSearchVertex(ctx, id, name, url, searchParameters);
 
             Vertex userVertex = graph.getVertex(user.getUserId(), authorizations);
             checkNotNull(userVertex, "Could not find user vertex with id " + user.getUserId());
-            String edgeId = userVertex.getId() + "_" + SearchProperties.HAS_SAVED_SEARCH + "_" + searchVertex.getId();
+            String edgeId = userVertex.getId() + "_" + SearchProperties.HAS_SAVED_SEARCH + "_" + id;
             if (graph.getEdge(edgeId, authorizations) == null) {
                 graph.addEdge(
                         edgeId,
-                        userVertex,
-                        searchVertex,
+                        userVertex.getId(),
+                        id,
                         SearchProperties.HAS_SAVED_SEARCH,
                         VISIBILITY.getVisibility(),
                         authorizations
                 );
             }
-
-            return searchVertex.getId();
-        } catch (Exception ex) {
-            throw new VisalloException("Could not save search", ex);
         }
+
+        return id;
     }
 
     @Override
@@ -136,36 +137,33 @@ public class VertexiumSearchRepository extends SearchRepository {
         }
 
         try (GraphUpdateContext ctx = graphRepository.beginGraphUpdate(Priority.LOW, user, authorizations)) {
-            Vertex searchVertex = saveSearchVertex(ctx, id, name, url, searchParameters, authorizations);
+            saveSearchVertex(ctx, id, name, url, searchParameters);
 
             String edgeId = String.format(
                     "%s_%s_%s",
-                    GLOBAL_SAVED_SEARCHES_ROOT_VERTEX_ID, SearchProperties.HAS_SAVED_SEARCH, searchVertex.getId()
+                    GLOBAL_SAVED_SEARCHES_ROOT_VERTEX_ID, SearchProperties.HAS_SAVED_SEARCH, id
             );
             if (graph.getEdge(edgeId, authorizations) == null) {
                 graph.addEdge(
                         edgeId,
-                        getGlobalSavedSearchesRootVertex(),
-                        searchVertex,
+                        getGlobalSavedSearchesRootVertex().getId(),
+                        id,
                         SearchProperties.HAS_SAVED_SEARCH,
                         VISIBILITY.getVisibility(),
                         authorizations
                 );
             }
-
-            return searchVertex.getId();
-        } catch (Exception ex) {
-            throw new VisalloException("Could not save global search", ex);
         }
+
+        return id;
     }
 
-    private Vertex saveSearchVertex(
+    private GraphUpdateContext.UpdateFuture<Vertex> saveSearchVertex(
             GraphUpdateContext ctx,
             String id,
             String name,
             String url,
-            JSONObject searchParameters,
-            Authorizations authorizations
+            JSONObject searchParameters
     ) {
         Visibility visibility = VISIBILITY.getVisibility();
         return ctx.getOrCreateVertexAndUpdate(id, visibility, elemCtx -> {
@@ -260,6 +258,35 @@ public class VertexiumSearchRepository extends SearchRepository {
             return null;
         }
         return toClientApiSearch(searchVertex);
+    }
+
+    @Override
+    public ClientApiSearch getSavedSearchOnWorkspace(String id, User user, String workspaceId) {
+        Authorizations authorizations = authorizationRepository.getGraphAuthorizations(
+                user,
+                VISIBILITY_STRING,
+                UserRepository.VISIBILITY_STRING
+        );
+
+        Vertex searchVertex = graph.getVertex(id, authorizations);
+        if (searchVertex == null) {
+            return null;
+        }
+
+        boolean isGlobalSearch = isSearchGlobal(id, authorizations);
+        boolean hasWorkspaceAccess = workspaceId != null && workspaceRepository.hasReadPermissions(workspaceId, user);
+
+        if (isGlobalSearch || isSearchPrivateToUser(id, user, authorizations)) {
+            return toClientApiSearch(searchVertex);
+        } else if (!isGlobalSearch && !hasWorkspaceAccess) {
+            return null;
+        } else {
+            String workspaceCreatorId = workspaceRepository.getCreatorUserId(workspaceId, user);
+            if (isSearchPrivateToUser(id, userRepository.findById(workspaceCreatorId), authorizations)) {
+                return toClientApiSearch(searchVertex);
+            }
+            return null;
+        }
     }
 
     @Override
