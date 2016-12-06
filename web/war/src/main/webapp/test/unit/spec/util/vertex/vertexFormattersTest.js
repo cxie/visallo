@@ -275,7 +275,7 @@ define([
             })
             it('should get display values for dates no time', function() {
                 var vertex = vertexFactory([
-                        propertyFactory(PROPERTY_NAME_DATE, new Date(2015, 1, 9).getTime())
+                        propertyFactory(PROPERTY_NAME_DATE, new Date('2015-02-09').getTime())
                     ]),
                     prop = _.partial(V.prop, vertex, PROPERTY_NAME_DATE);
 
